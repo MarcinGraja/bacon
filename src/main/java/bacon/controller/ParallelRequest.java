@@ -4,7 +4,11 @@ import javafx.concurrent.Task;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
 public class ParallelRequest extends Task {
+    private static final AtomicInteger failCount = new AtomicInteger();
     private String url;
     private String response;
     public ParallelRequest(String url) {
@@ -12,10 +16,20 @@ public class ParallelRequest extends Task {
     }
 
     @Override
-    protected Object call() throws Exception {
-        OkHttpClient client = new OkHttpClient();
+    protected Object call(){
+
+        OkHttpClient.Builder builder = new OkHttpClient.Builder();
+        builder.connectTimeout(30, TimeUnit.SECONDS);
+        builder.readTimeout(30, TimeUnit.SECONDS);
+        builder.writeTimeout(30, TimeUnit.SECONDS);
+        OkHttpClient client = builder.build();
         Request request = new Request.Builder().url(url).build();
-        response = client.newCall(request).execute().body().string();
+        try {
+            response = client.newCall(request).execute().body().string();
+        }catch(Exception e){
+            System.out.println(e.toString() + ": " + url + ": " + failCount);
+            failCount.getAndIncrement();
+        }
         return null;
     }
     

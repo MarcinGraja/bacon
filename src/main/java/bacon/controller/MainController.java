@@ -6,7 +6,6 @@ import bacon.model.Movie;
 import bacon.model.MovieFull;
 import bacon.view.MainView;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import javafx.concurrent.Task;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -40,34 +39,39 @@ public class MainController{
             default: return null;
         }
     }
-    public MovieFull parseMovieFull(String JSON){
+    @SuppressWarnings("UnnecessaryLocalVariable")
+    MovieFull parseMovieFull(String JSON){
         try {
-            return new ObjectMapper().readValue(JSON, MovieFull.class);
+            MovieFull temp = new ObjectMapper().readValue(JSON, MovieFull.class);
+            return temp;
         } catch (Exception e) {
             System.out.println(JSON);
             e.printStackTrace();
             return null;
         }
     }
+    @SuppressWarnings("UnnecessaryLocalVariable")
     public Movie[] parseMovies(String JSON){
         try {
-            return new ObjectMapper().readValue(JSON, Movie[].class);
+            Movie[] movies = new ObjectMapper().readValue(JSON, Movie[].class);
+            return movies;
         } catch (Exception e) {
             System.out.println(JSON);
             e.printStackTrace();
             return null;
         }
     }
+    @SuppressWarnings("UnnecessaryLocalVariable")
     Actor[] parseActors(String JSON){
         try {
-            return new ObjectMapper().readValue(JSON, Actor[].class);
+            Actor[] actors = new ObjectMapper().readValue(JSON, Actor[].class);
+            return actors;
         }catch (Exception e){
             e.printStackTrace();
             return null;
         }
     }
     public void addActorsByName(String name){
-        //Platform.runLater(() -> {
             OkHttpClient client = new OkHttpClient();
             Request request = new Request.Builder().url("https://java.kisim.eu.org/actors/search/"+name).build();
             try {
@@ -78,11 +82,10 @@ public class MainController{
             }catch (Exception e){
                 e.printStackTrace();
             }
-        //});
     }
     public void start(){
         bfsThread = new Thread(bfs);
-        bfsThread.setDaemon(false);
+        bfsThread.setDaemon(true);
         bfs.init();
         bfsThread.start();
 

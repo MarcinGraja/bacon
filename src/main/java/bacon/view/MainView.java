@@ -4,11 +4,8 @@ import bacon.controller.MainController;
 import bacon.controller.ParallelRequest;
 import bacon.model.Actor;
 import bacon.model.Movie;
-import javafx.animation.KeyFrame;
-import javafx.animation.Timeline;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
-import javafx.util.Duration;
 
 public class MainView {
     private MainController mainController;
@@ -39,7 +36,7 @@ public class MainView {
                     e.printStackTrace();
                 }
                 Movie[] movies = mainController.parseMovies(parallelRequest.getResponse());
-                StringBuilder tooltip = new StringBuilder("played in:\n");
+                StringBuilder tooltip = new StringBuilder("id: ").append(actor.getID()).append("\nplayed in:\n");
                 for (Movie movie : movies) {
                     tooltip.append(movie.getTitle()).append("\n");
                 }
@@ -54,32 +51,28 @@ public class MainView {
 
     }
     @FXML private void initialize(){
+        sourceField.setEditable(false);
+        targetField.setEditable(false);
         foundActors.setItems(mainController.getMainModel().getFoundActors());
         foundActors.setCellFactory(lv-> new CustomCell());
         output.setEditable(false);
         searchButton.setOnAction(e-> mainController.addActorsByName(searchBox.getText()));
         output.textProperty().bind(mainController.getTask().messageProperty());
-        Timeline timeline = new Timeline(new KeyFrame(Duration.millis(1000),
-                e-> {
-//            System.out.println("fuck you");
-//            System.out.println("checked message:"+mainController.getTask().getCheckedMessage());
-                }));
-        timeline.setCycleCount(Timeline.INDEFINITE);
-        timeline.play();
     }
     @SuppressWarnings("Duplicates")
     @FXML
-    void fuck(){
-        System.out.println("adding some bacon");
+    void fastStart(){
+        Actor source = new Actor("Cezary Pazura","nm0668640");
+        sourceField.setText("current source:" + source.getName());
+        mainController.setSource(source);
 
-        mainController.setSource(new Actor("Kevin Bacon","nm0000102"));
-        System.out.println("adding some claws");
-        mainController.setTarget(new Actor("Cezary Pazura","nm0668640"));
+        Actor target = new Actor("Henryk Golebiewski","nm0326430");
+        targetField.setText("current target:" + target.getName());
+        mainController.setTarget(target);
         start();
     }
     @FXML
     void start(){
-        System.out.println("running shit");
         mainController.start();
     }
     @FXML

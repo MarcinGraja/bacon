@@ -1,5 +1,8 @@
 package bacon.model;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+
+@JsonDeserialize(using = MovieFullDeserializer.class)
 public class MovieFull extends Movie {
     private Actor[] actors;
     MovieFull(){

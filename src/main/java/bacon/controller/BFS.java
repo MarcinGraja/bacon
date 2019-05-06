@@ -10,67 +10,63 @@ import javafx.util.Duration;
 
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+
 public class BFS extends Task{
     private Actor source;
     private Actor target;
-    private int numberOfProcesses = 8;
+    private int numberOfProcesses = 20;
     private MainController mainController;
-    private int cycleLength = 500000;
-    private int [] states;
     private Timeline checkProgress;
-    private int cancelDepth = 0;
-    private void signalState(int id, boolean state) {
-        if(state) states[id]++;
-        else states[id]=0;
-    }
+    private final AtomicInteger cancelDepth = new AtomicInteger();
     private boolean finished = false;
-    public  boolean isFinished(){
+    boolean isFinished(){
         return finished;
     }
     private String finalResult;
     private  BFSTask[] tasks;
     private Thread[] threads;
+    private BlockingQueue<Element> blockingQueue;
+    private SetBlockingQueue<Integer> visited = new SetBlockingQueue<>();
     BFS(MainController mainController) {
         this.mainController = mainController;
-        states = new int[numberOfProcesses];
     }
     void init(){
-        List<BlockingQueue<Element>> blockingQueue;
-        blockingQueue = new ArrayList<>();
+
+        blockingQueue = new PriorityBlockingQueue<>();
         tasks = new BFSTask[numberOfProcesses];
         threads = new Thread[numberOfProcesses];
         for (int i=0; i<numberOfProcesses; i++){
-            blockingQueue.add(new PriorityBlockingQueue<>(100));
-            tasks[i]=new BFSTask(i,blockingQueue);
+            tasks[i]=new BFSTask();
             threads[i] = new Thread(tasks[i]);
             threads[i].start();
         }
-        Element temp = new Element(0);
-        temp.add(source, source.getName());
-        blockingQueue.get(0).add(temp);
+        Element temp = new Element(0, source, source.getName());
+        try {
+            blockingQueue.put(temp);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
-
     @Override
     protected Object call(){
+        final AtomicInteger prevSum = new AtomicInteger(0);
         checkProgress = new Timeline(new KeyFrame(Duration.millis(500), event -> {
-//            System.out.println("checking if should cancel");
-            boolean shouldCancel = false;
-            for (int state : states) {
-
-                if (state>100) {
-                    System.out.println("I'm cancelling; state:" + state);
-                    shouldCancel = true;
-                    cancel();
-                    break;
+            boolean wantsToCancel = true;
+            if (!blockingQueue.isEmpty()){
+                wantsToCancel = false;
+            }
+            else{
+                for (Task task: tasks){
+                    if(task.getMessage().equals("working")) wantsToCancel = false;
                 }
             }
-            if (shouldCancel){
+            if (wantsToCancel){
                 checkProgress.stop();
                 for (BFSTask task: tasks){
                     task.cancel();
                 }
             }
-            updateMessage(getResult());
             int sum = 0;
             for (BFSTask task: tasks){
                 ArrayList<Integer> partialProcessed = task.getProcessed();
@@ -78,33 +74,27 @@ public class BFS extends Task{
                     sum+=integer;
                 }
             }
-            System.out.println("total processed:" + sum);
+            updateMessage(getResult()+"\n left: " + blockingQueue.size() + " first in queue at depth "
+                    + (blockingQueue.peek()!=null? blockingQueue.peek().getDepth() : "unknown")
+                    + "\nper second: " + 2.0*(sum- prevSum.get()));
+            prevSum.set(sum);
         }));
         checkProgress.setCycleCount(Timeline.INDEFINITE);
         checkProgress.play();
-        System.out.println("jesus fuck");
-        System.out.println("joining stuff");
         for (Thread thread: threads){
-            while(thread.isAlive()) {
-                try {
-                    thread.join(100);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
-
         }
-        System.out.println("joined stuff prob");
         for (BFSTask task: tasks){
-            System.out.println(task.id + " is cancelled " + task.isCancelled() + "\t is done " + task.isDone());
             finalResult+=task.getResult();
+            System.out.println("Partial result: "+task.getResult());
         }
+        updateMessage(finalResult);
         finished =  true;
         return null;
-    }
-    public String getCheckedMessage(){
-        System.out.println("getting message");
-        return super.getMessage();
     }
     @Override
     public boolean cancel(boolean b) {
@@ -116,11 +106,10 @@ public class BFS extends Task{
 
     private String getResult(){
         if (!isRunning()){
-//            System.out.println("not running");
+            System.out.println("final result given");
             return finalResult;
         }
         else{
-//            System.out.println("running");
             StringBuilder partialResult = new StringBuilder("processed: \n");
             ArrayList<Integer> processed = new ArrayList<>();
             for (BFSTask task: tasks){
@@ -147,150 +136,134 @@ public class BFS extends Task{
         this.target = target;
     }
     private class BFSTask extends Task{
-        private int id;
-        private List<BlockingQueue<Element>> blockingQueue;
-        private List<ArrayList<Element>> output;
-        private Queue<Element> internalQueue;
-        private boolean active = true;
-        private Set<Integer> visited = new HashSet<>();
         private String result = "";
         private ArrayList<Integer> processed;
-        BFSTask(int id, List<BlockingQueue<Element>> blockingQueue){
-            int initialMaxDepth = 20;
-            this.id = id;
-            this.blockingQueue = blockingQueue;
-            internalQueue = new PriorityQueue<>();
-            output = new ArrayList<>();
+        BFSTask(){
             processed = new ArrayList<>();
-            for (int i=0; i<numberOfProcesses; i++){
-                output.add(new ArrayList<>(initialMaxDepth){
-                    @Override
-                    public void add(int index, Element element) {
-                        try {
-                            super.add(index, element);
-                        }catch (IndexOutOfBoundsException e){
-                            ensureCapacity(index);
-                            add(index, element);
-                        }
-                    }
-                });
-            }
         }
-
         @Override
-        protected Object call(){
-            while (!isCancelled()){
-                boolean currentState = populateInternalQueue();
-                for (Element element: internalQueue){
-                    while (processed.size()<=element.getDepth()+1){
+        protected Object call() {
+            try {
+                while (!isCancelled()) {
+                    Element element;
+                    try {
+                        updateMessage("waiting");
+                        element = blockingQueue.take();
+                        updateMessage("working");
+                        if (visited.contains(Integer.parseInt(element.getID().substring(2)))
+                            || element.getDepth()>cancelDepth.get() && cancelDepth.get()!=0){
+                            System.out.println("continued1");
+                            continue;
+                        }
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                        continue;
+                    }
+                    while (processed.size() <= element.getDepth() + 1) {
                         processed.add(0);
                     }
-                    processed.set(element.getDepth(), processed.get(element.getDepth())+1);
-                    if (element.peek().equals(target)){
-                        System.out.println(id + "found target at depth " + element.getDepth());
-                        if (cancelDepth == 0){
-                            cancelDepth = element.getDepth();
-                            result = element.peek().getPath()+"\n";
+                    processed.set(element.getDepth(), processed.get(element.getDepth()) + 1);//count number of processed items
+                    if (element.equals(target)) {
+                        System.out.println("found target at depth " + element.getDepth() + " with path " + element.getPath()
+                                            + "cancel depth: " + cancelDepth.get());
+                        if (cancelDepth.get() == 0 || cancelDepth.get() > element.getDepth()) {
+                            cancelDepth.set(element.getDepth());
+                            result += element.getPath() + "\n";
                         }
                     }
-                    currentState = currentState || populateBlockingQueue(element);
-                }
-                if (currentState!= active)
-                {
-                    active = currentState;
-                    signalState(id, active);
-                    if(!active){
-                        try {
-                            Thread.sleep(cycleLength);
-                        } catch (InterruptedException e) {
-                            e.printStackTrace();
-                        }
+                    if (element.getDepth()>=cancelDepth.get() && cancelDepth.get()!=0){
+                        System.out.println("continued2");
+                        continue;
                     }
+                    visited.add(Integer.parseInt(element.getID().substring(2)));
+                    populateBlockingQueue(element);
                 }
+//                System.out.println("cancelled apparently");
+//                if (isCancelled()) System.out.println("definitely");
+                return null;
+            }catch(Exception e){
+                e.printStackTrace();
+                return null;
             }
-            System.out.println("returning " + id);
-            return null;
         }
         String getResult(){
-            System.out.println("trying to get result");
             return result;
         }
         ArrayList<Integer> getProcessed(){
             return processed;
         }
         @SuppressWarnings("Duplicates")
-        private boolean populateBlockingQueue(Element element){
+        private void populateBlockingQueue(Element element){
 
             int currentDepth = element.getDepth()+1;
-            if (currentDepth > cancelDepth && cancelDepth != 0){    //remove excess elements
-                internalQueue.remove(element);
-                return false;
+            if (currentDepth > cancelDepth.get() && cancelDepth.get() != 0){    //remove excess elements
+                try {
+                    blockingQueue.take();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                return;
             }
-            while (!element.isEmpty()){
-                ActorContainer actorContainer = element.pop();
-                String url = mainController.getRequestURL(MainController.RequestType.MoviesByActor, actorContainer.getID());
-                ParallelRequest parallelRequest = new ParallelRequest(url);
-                Thread thread = new Thread(parallelRequest);
+            String url = mainController.getRequestURL(MainController.RequestType.MoviesByActor, element.getID());
+            ParallelRequest parallelRequest = new ParallelRequest(url);
+            Thread thread = new Thread(parallelRequest);
+            thread.start();
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            String json = parallelRequest.getResponse();
+            if (json == null){
+                try {
+                    blockingQueue.put(element);
+                    Thread.sleep(50);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                return;
+            }
+            Movie[] movies = mainController.parseMovies(json);
+            for(Movie movie: movies) {
+                url = mainController.getRequestURL(MainController.RequestType.ActorsByMovie, movie.getID());
+                parallelRequest = new ParallelRequest(url);
+                thread = new Thread(parallelRequest);
                 thread.start();
                 try {
                     thread.join();
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
-                Movie[] movies = mainController.parseMovies(parallelRequest.getResponse());
-                for (Movie movie: movies){
-                    url = mainController.getRequestURL(MainController.RequestType.ActorsByMovie, movie.getID());
-                    parallelRequest = new ParallelRequest(url);
-                    thread = new Thread(parallelRequest);
-                    thread.start();
+                json = parallelRequest.getResponse();
+                if (json == null){
+
                     try {
-                        thread.join();
+                        blockingQueue.put(element);
+                        Thread.sleep(50);
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                     }
-                    MovieFull movieFull = mainController.parseMovieFull(parallelRequest.getResponse());
-                    for (Actor nextActor: movieFull.getActors()){
-                        int actorId = Integer.parseInt(nextActor.getID().substring(2));
-                        if (visited.contains(actorId)){
-                            continue;
-                        }
-                        visited.add(actorId);
-                        int remainder = actorId % numberOfProcesses;
-                        String nextPath = actorContainer.getPath() + " starred in " + movieFull.getTitle()
-                                + " with " + nextActor.getName() + '\n';
-                        ActorContainer addedActor = new ActorContainer(nextActor, nextPath);
-                        if (remainder!=id){     //provide item for other consumers
-                            if  (output.get(remainder).get(currentDepth)==null){
-                                output.get(remainder).add(new Element(currentDepth));
-                            }
-                            output.get(remainder).get(currentDepth).add(addedActor);
-                        }
-                        else{                   //provide for self
-                            element.add(addedActor);
-                        }
-                        processed.set(currentDepth, processed.get(currentDepth)+1);
-                    }
+                    return;
                 }
-            }
-            return true;
-        }
-        private boolean populateInternalQueue(){
-            boolean added = false;
-            if (internalQueue.isEmpty()){
-                Element element = new Element(00);
-                try {
-                    element = blockingQueue.get(id).poll(cycleLength*10, TimeUnit.MILLISECONDS);
-                    if (element == null){
-                        return false;
+                MovieFull movieFull = mainController.parseMovieFull(json);
+                for (Actor actor: movieFull.getActors()){
+                    int actorId = Integer.parseInt(actor.getID().substring(2));
+                    String nextPath = element.getPath() + " starred in " + movieFull.getTitle()
+                            + " with " + actor.getName() + '\n';
+                    ActorContainer addedActor = new ActorContainer(actor, nextPath);
+                    try {
+                        blockingQueue.put(new Element(currentDepth, addedActor));
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
                     }
-                }catch (InterruptedException e) {
-                    e.printStackTrace();
+                    processed.set(currentDepth, processed.get(currentDepth)+1);
+//                    if (currentDepth == 3){
+//                        System.out.println(addedActor.getID() + "\t" + addedActor.getName());
+//                    }
                 }
-                internalQueue.add(element);
-                added = true;
-                System.out.println(true);
+
             }
-            return  added;
+
         }
     }
     class ActorContainer extends Actor {
@@ -300,28 +273,61 @@ public class BFS extends Task{
             this.path = path;
         }
 
+        public ActorContainer(ActorContainer addedActor) {
+            super(addedActor.getName(), addedActor.getID());
+            this.path=addedActor.getPath();
+        }
+
         String getPath() {
             return path;
         }
     }
-    private class Element extends LinkedBlockingQueue<ActorContainer> implements  Comparable<Integer>{
+    public class SetBlockingQueue<T> extends LinkedBlockingQueue<T> {
+
+        private Set<T> set = Collections.newSetFromMap(new ConcurrentHashMap<>());
+
+        /**
+         * Add only element, that is not already enqueued.
+         * The method is synchronized, so that the duplicate elements can't get in during race condition.
+         * @param t object to put in
+         * @return true, if the queue was changed, false otherwise
+         */
+        @Override
+        public synchronized boolean add(T t) {
+            if (set.contains(t)) {
+                return false;
+            } else {
+                set.add(t);
+                return super.add(t);
+            }
+        }
+
+        /**
+         * Takes the element from the queue.
+         * Note that no synchronization with {@link #add(Object)} is here, as we don't care about the element staying in the set longer needed.
+         * @return taken element
+         * @throws InterruptedException
+         */
+        @Override
+        public T take() throws InterruptedException {
+            T t = super.take();
+            set.remove(t);
+            return t;
+        }
+    }
+    private class Element extends ActorContainer implements  Comparable<Element>{
         private int depth;
 
-        Element(int depth) {
-            super();
+        Element(int depth, Actor actor, String path) {
+            super(actor, path);
             this.depth = depth;
         }
-        void add(Actor actor, String path){
-            super.add(new ActorContainer(actor, path));
+
+        public Element(int currentDepth, ActorContainer addedActor) {
+            super(addedActor);
+            this.depth=currentDepth;
         }
-        ActorContainer pop(){
-            try {
-                return super.take();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            return null;
-        }
+
         int getDepth(){
             return depth;
         }
@@ -329,10 +335,9 @@ public class BFS extends Task{
         public int hashCode() {
             return depth;
         }
-
         @Override
-        public int compareTo(Integer o) {
-            return Integer.compare(depth, 0);
+        public int compareTo(Element o) {
+            return Integer.compare(depth, o.getDepth());
         }
 
     }
