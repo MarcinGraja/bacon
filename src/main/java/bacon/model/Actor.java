@@ -1,7 +1,9 @@
 package bacon.model;
 
-import java.util.Objects;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 
+import java.util.Objects;
+@JsonDeserialize(using = ActorDeserializer.class)
 public class Actor {
     private String id;
     private String name;
@@ -10,9 +12,13 @@ public class Actor {
         this.name = name;
         this.id = id;
     }
-    public Actor(){}
 
-    public String getId() {
+    public Actor(Actor actor) {
+        this.name = actor.getName();
+        this.id = actor.getID();
+    }
+    public Actor(){}
+    public String getID() {
         return id;
     }
 
@@ -31,15 +37,16 @@ public class Actor {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        Actor actor = (Actor) o;
-        return id.equals(actor.id);
+        if (!(o instanceof Actor)) return false;
+        Actor that = (Actor) o;
+        return id.equals(that.id);
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(id);
     }
+
     public String toString(){
         return name;
     }

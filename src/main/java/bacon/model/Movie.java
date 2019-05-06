@@ -1,11 +1,18 @@
 package bacon.model;
 
 public class Movie extends org.jgrapht.graph.DefaultEdge{
-    private String name;
+    private String title;
     private String id;
-
-    public Movie(String name, String id) {
-        this.name = name;
+    public Movie(String title, String id) {
+        this.title = title;
         this.id = id;
+    }
+    public Movie(){}
+    public String getTitle() {
+        return title;
+    }
+
+    public String getID() {
+        return id;
     }
 }

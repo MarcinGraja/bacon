@@ -50,10 +50,6 @@
                 <version>0.0.2</version>
                 <configuration>
                     <mainClass>bacon/bacon.Main</mainClass>
-                    <options>
-                        <option>--add-opens</option>
-                        <option>bacon</option>
-                    </options>
                 </configuration>
                 </plugin>
             <plugin>
@@ -62,8 +58,5 @@
                 <version>3.7.0</version>
             </plugin>
         </plugins>
-        <defaultGoal>
-            java
-        </defaultGoal>
     </build>
 </project>

@@ -7,5 +7,6 @@ module bacon{
     requires com.fasterxml.jackson.databind;
     opens bacon.model;
     opens bacon.controller;
+    opens bacon.view;
     opens bacon;
 }
